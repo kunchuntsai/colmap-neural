@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  neural-colmap:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: colmap-neural:latest
+    container_name: colmap-neural-dev
+    volumes:
+      - ./:/app                          # Mount project directory
+      - ./data:/app/data                 # Mount data directory
+      - ./models:/app/models             # Mount models directory
+      - ./benchmark-results:/app/benchmark-results  # Mount benchmark results
+    ports:
+      - "8888:8888"                      # For Jupyter if needed
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
+    tty: true
+    stdin_open: true
+    # Override the entrypoint in Dockerfile to get an interactive shell
+    entrypoint: ["/bin/bash"]
+    
+  # Separate service for benchmarking
+  benchmark:
+    image: colmap-neural:latest
+    container_name: colmap-neural-benchmark
+    volumes:
+      - ./:/app
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./benchmark-results:/app/benchmark-results
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    command: python3 /app/scripts/benchmark.py
