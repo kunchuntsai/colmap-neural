@@ -1,5 +1,5 @@
-# Base image with CUDA support
-FROM nvidia/cuda:12.2.0-devel-ubuntu22.04
+# Use Ubuntu base image compatible with Apple Silicon
+FROM --platform=linux/arm64 ubuntu:22.04
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -34,7 +34,7 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install PyTorch
+# Install PyTorch (CPU version - we'll use Metal on the host machine)
 RUN pip3 install --no-cache-dir torch torchvision torchaudio
 
 # Install other Python dependencies
@@ -53,9 +53,6 @@ RUN useradd -m -d /home/colmap -s /bin/bash colmap && \
 
 # Set working directory
 WORKDIR /app
-
-# We'll mount the local directory at runtime
-# Don't build the project here, we'll use the build script instead
 
 # Set a default command that gives us a shell
 CMD ["/bin/bash"]

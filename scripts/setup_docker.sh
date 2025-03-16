@@ -17,20 +17,39 @@ if ! command -v docker-compose &> /dev/null; then
     exit 1
 fi
 
-# Check for NVIDIA GPU and Docker support
-if command -v nvidia-smi &> /dev/null; then
-    echo "NVIDIA GPU detected."
+# Check for Apple Silicon
+if [[ $(uname -m) == 'arm64' ]]; then
+    echo "Apple Silicon (ARM64) detected."
+    echo "Using compatible Docker configuration for Apple Silicon."
     
-    # Check for NVIDIA Container Toolkit
-    if ! docker info | grep -q "Runtimes.*nvidia"; then
-        echo "NVIDIA Container Toolkit not found. Please install it for GPU support:"
-        echo "https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html"
-        exit 1
+    # Make sure we're using the ARM-compatible Docker files
+    if grep -q "nvidia/cuda" Dockerfile; then
+        echo "Warning: Your Dockerfile is configured for NVIDIA GPUs, which are not compatible with Apple Silicon."
+        echo "Please update your Dockerfile to use a compatible base image."
+        echo "You can use the modified Dockerfile provided in the project documentation."
     fi
-    
-    echo "NVIDIA Container Toolkit detected. GPU support will be enabled."
 else
-    echo "No NVIDIA GPU detected. Proceeding with CPU-only Docker configuration."
+    # Check for NVIDIA GPU and Docker support
+    if command -v nvidia-smi &> /dev/null; then
+        echo "NVIDIA GPU detected."
+
+        # Check for NVIDIA Container Toolkit
+        if ! docker info | grep -q "Runtimes.*nvidia"; then
+            echo "NVIDIA Container Toolkit not found. Please install it for GPU support:"
+            echo "https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html"
+            exit 1
+        fi
+
+        echo "NVIDIA Container Toolkit detected. GPU support will be enabled."
+    else
+        echo "No NVIDIA GPU detected. Proceeding with CPU-only Docker configuration."
+
+        # Remove NVIDIA-specific configurations if present
+        if grep -q "nvidia" docker-compose.yml; then
+            echo "Warning: Your docker-compose.yml contains NVIDIA-specific configurations."
+            echo "These will be ignored since no NVIDIA GPU was detected."
+        fi
+    fi
 fi
 
 # Check for submodules and initialize/update them if needed

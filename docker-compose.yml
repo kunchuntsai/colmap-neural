@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   neural-colmap:
     build:
@@ -14,16 +12,6 @@ services:
       - ./benchmark-results:/app/benchmark-results  # Mount benchmark results
     ports:
       - "8888:8888"                      # For Jupyter if needed
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
     tty: true
     stdin_open: true
     # Override the entrypoint in Dockerfile to get an interactive shell
@@ -38,14 +26,4 @@ services:
       - ./data:/app/data
       - ./models:/app/models
       - ./benchmark-results:/app/benchmark-results
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     command: python3 /app/scripts/benchmark.py
