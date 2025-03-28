@@ -7,10 +7,10 @@
   - [2. Environment Setup](#2-environment-setup)
     - [2.1. Clone Repository](#21-clone-repository)
     - [2.2. Local Environment Setup](#22-local-environment-setup)
-    - [2.3. Docker Environment Setup](#23-docker-environment-setup)
+    - [2.3. Nix Environment Setup](#23-nix-environment-setup)
   - [3. Build Process](#3-build-process)
   - [4. Running the Application](#4-running-the-application)
-- [Docker Development Workflow](#docker-development-workflow)
+- [Nix Development Workflow](#nix-development-workflow)
 - [Features](#features)
 - [Documentation](#documentation)
 - [Contributing](#contributing)
@@ -27,11 +27,12 @@ This project enhances COLMAP with neural network capabilities for feature extrac
 
 ```
 colmap-neural/
-├── colmap/                      # Unmodified COLMAP repository (submodule)
+├── external/colmap/             # Unmodified COLMAP repository (submodule)
 ├── neural-extensions/           # Neural components as plugins
 ├── colmap-neural-app/           # Main application
-├── models/                      # Pre-trained neural models
 ├── scripts/                     # Utility scripts
+├── flake.nix                    # Nix flake configuration
+├── shell.nix                    # Compatibility wrapper for flake.nix
 └── ...                          # Configuration files
 ```
 
@@ -60,8 +61,7 @@ This project requires several dependencies:
 #### 2.1. Clone Repository
 
 ```bash
-git clone --recurse-submodules https://github.com/your-username/colmap-neural.git
-cd colmap-neural
+git submodule update --init --recursive
 ```
 
 #### 2.2. Local Environment Setup
@@ -79,20 +79,38 @@ The script will:
 - Configure GPU support (CUDA or Metal)
 - Download pre-trained models
 
-#### 2.3. Docker Environment Setup
+#### 2.3. Nix Environment Setup
 
-For containerized development:
+For a reproducible development environment with Nix, we recommend using our flake-based setup:
 
 ```bash
-# Set up Docker environment
-./scripts/setup_docker.sh
+# Make sure you have flakes enabled in your Nix configuration
+# Edit ~/.config/nix/nix.conf or /etc/nix/nix.conf and add:
+# experimental-features = nix-command flakes
+
+# Enter the development environment with flakes (recommended)
+nix develop
+
+# If you don't have flakes enabled, you can use the compatibility wrapper:
+nix-shell
 ```
 
-This script will:
-- Check for Docker and Docker Compose
-- Create necessary configuration files
-- Configure GPU support if available
-- Set up volume mounts for data, models, and results
+This will:
+- Set up a reproducible environment with all required dependencies
+- Configure GPU support based on your hardware (CUDA or Metal)
+- Ensure consistent library versions across development machines
+
+### 2.4. Docker Environment Setup
+
+For containerized development with Docker:
+
+```bash
+# Build and configure Docker environment
+./scripts/setup_docker.sh
+
+# Run in Docker container
+docker run -v /path/to/data:/data colmap-neural:cuda [options]
+```
 
 ### 3. Build Process
 
@@ -140,24 +158,35 @@ Run the application with:
 #   --benchmark-dataset=<path>   Dataset path for benchmarking
 ```
 
-## Docker Development Workflow
+## Nix Development Workflow
 
-Our Docker setup provides a full development environment:
+Our Nix setup provides a fully reproducible development environment using flakes:
 
 ```bash
-# 1. Set up Docker environment
-./scripts/setup_docker.sh
+# 1. Standard development environment (auto-detects platform)
+nix develop
 
-# 2. Start and enter container
-docker-compose up -d
-docker-compose exec neural-colmap bash
+# 2. Debug development environment (includes gdb and valgrind)
+nix develop .#debug
 
-# 3. Inside container, build and run
-./scripts/build.sh
-./scripts/run.sh --help
+# 3. Force specific GPU backend
+nix develop .#cuda   # NVIDIA GPU support
+nix develop .#metal  # Apple Metal support
+
+# 4. Build packages directly
+nix build .#colmap   # Build standard COLMAP
+nix build            # Build neural-enhanced COLMAP
+
+# 5. Run the application directly 
+nix run              # Run the neural-enhanced COLMAP
 ```
 
-This approach separates the environment setup from the build process, giving you more flexibility during development.
+For those without flakes enabled, the `shell.nix` provides a compatibility layer:
+
+```bash
+# Enter standard development environment
+nix-shell
+```
 
 ## Features
 
@@ -172,6 +201,7 @@ For detailed documentation, see:
 - [Environment Setup](doc/environment.md)
 - [Plugin Architecture](doc/neural_architecture.md)
 - [M4 Pro Optimizations](doc/m4_optimizations.md)
+- [Nix Flake Setup](doc/nix_setup.md)
 
 ## Contributing
 
