@@ -28,6 +28,8 @@
           pkg-config
           gcc
           git
+
+          onnxruntime
           
           # Core libraries
           boost

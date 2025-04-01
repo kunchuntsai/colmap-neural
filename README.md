@@ -29,11 +29,11 @@ This project enhances COLMAP with neural network capabilities for feature extrac
 colmap-neural/
 ├── external/colmap/             # Unmodified COLMAP repository (submodule)
 ├── neural-extensions/           # Neural components as plugins
-├── colmap-neural-app/           # Main application
+├── src/                         # Main application
 ├── scripts/                     # Utility scripts
 ├── flake.nix                    # Nix flake configuration
 ├── shell.nix                    # Compatibility wrapper for flake.nix
-└── ...                          # Configuration files
+└── config/                      # Configuration files
 ```
 
 ## Setup Guide

@@ -1,4 +1,14 @@
-# CMakeLists.txt
+# Top-level CMakeLists.txt
+# Detect if we're in a Nix build environment
+if(DEFINED ENV{NIX_BUILD_TOP})
+    message(STATUS "Building in Nix environment")
+    # Don't include user configuration in Nix build
+else()
+    message(STATUS "Building in local environment")
+    # Include user configuration if it exists (for local builds)
+    include(CMakeLists.txt.user OPTIONAL)
+endif()
+
 cmake_minimum_required(VERSION 3.20)
 project(colmap-neural VERSION 0.1.0 LANGUAGES CXX)
 
@@ -18,7 +28,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 option(WITH_CUDA "Build with CUDA support" OFF)
 option(WITH_METAL "Build with Metal support" ON)  # Default ON for Apple Silicon
 option(WITH_DOCKER "Building in Docker environment" OFF)
-option(BUILD_COLMAP "Build COLMAP from source" ON)  # New option to build COLMAP
+option(BUILD_COLMAP "Build COLMAP from source" ON)
 
 # Force disable CUDA as specified
 set(WITH_CUDA OFF)
@@ -28,7 +38,7 @@ if(APPLE)
     set(WITH_METAL ON)
     message(STATUS "Building for Apple platform with Metal support")
     
-    # Check for Apple Silicon (M4 Pro)
+    # Check for Apple Silicon
     execute_process(
         COMMAND sysctl -n machdep.cpu.brand_string
         OUTPUT_VARIABLE CPU_BRAND
@@ -57,11 +67,6 @@ if(BUILD_COLMAP)
     set(COLMAP_INSTALL_DIR ${CMAKE_BINARY_DIR}/colmap-install)
     set(COLMAP_SOURCE_DIR ${CMAKE_SOURCE_DIR}/external/colmap)
     
-    # Create external directory if it doesn't exist
-    if(NOT EXISTS ${COLMAP_SOURCE_DIR} AND EXISTS ${CMAKE_SOURCE_DIR}/external)
-        file(MAKE_DIRECTORY ${CMAKE_SOURCE_DIR}/external)
-    endif()
-    
     # Apply patches to COLMAP source code if needed
     patch_colmap_files(${COLMAP_SOURCE_DIR})
     
@@ -81,13 +86,13 @@ if(BUILD_COLMAP)
         -DCMAKE_MACOSX_RPATH=ON
     )
     
-    # Add Apple M4 Pro specific optimizations
+    # Add Apple Silicon specific optimizations
     if(APPLE AND WITH_METAL)
         # Add optimization flags separately to avoid parsing issues
         list(APPEND COLMAP_CMAKE_ARGS -DCMAKE_CXX_FLAGS="-O3")
         list(APPEND COLMAP_CMAKE_ARGS -DCMAKE_CXX_FLAGS_RELEASE="-O3")
         
-        # Check if we can detect Apple Silicon before adding M4-specific flags
+        # Check if we can detect Apple Silicon before adding specific flags
         if(CPU_BRAND MATCHES "Apple")
             # Add Apple-specific flags as separate options
             list(APPEND COLMAP_CMAKE_ARGS -DAPPLE_SILICON=ON)
@@ -119,8 +124,7 @@ if(BUILD_COLMAP)
     add_library(colmap_interface INTERFACE)
     add_dependencies(colmap_interface colmap_ext)
     
-    # The actual library paths will be configured in the script
-    # but we'll set include directories here for convenience
+    # Set include directories for the interface
     target_include_directories(colmap_interface INTERFACE 
         ${COLMAP_SOURCE_DIR}/src
         ${COLMAP_INSTALL_DIR}/include
@@ -134,25 +138,69 @@ else()
     find_package(COLMAP REQUIRED)
 endif()
 
-# Find other dependencies
+# Find common dependencies
 find_package(Boost REQUIRED COMPONENTS program_options filesystem system)
 find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(glog REQUIRED)
 find_package(gflags REQUIRED)
+find_package(ONNXRuntime REQUIRED)
 
-# Add the neural-extensions if they exist
-if(EXISTS ${CMAKE_SOURCE_DIR}/neural-extensions)
-    message(STATUS "Adding neural-extensions directory")
-    add_subdirectory(neural-extensions)
+# Add the neural-extensions directory
+add_subdirectory(neural-extensions)
+
+# Find all source and header files in the src directory
+file(GLOB_RECURSE SRC_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.h")
+file(GLOB_RECURSE SRC_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cc")
+
+# Add the main executable
+add_executable(colmap-neural ${SRC_SOURCES} ${SRC_HEADERS})
+
+# Set include directories
+target_include_directories(colmap-neural PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${COLMAP_INCLUDE_DIRS}
+    ${EIGEN3_INCLUDE_DIRS}
+    ${Boost_INCLUDE_DIRS}
+    ${OpenCV_INCLUDE_DIRS}
+    ${ONNXRuntime_INCLUDE_DIRS}
+    ${CMAKE_SOURCE_DIR}/neural-extensions/include
+)
+
+# Link libraries
+target_link_libraries(colmap-neural
+    PRIVATE
+    COLMAP::COLMAP
+    Eigen3::Eigen
+    ${Boost_LIBRARIES}
+    ${OpenCV_LIBS}
+    ${ONNXRuntime_LIBRARIES}
+    glog::glog
+    neural_extensions
+)
+
+# For Apple Silicon, add Metal support
+if(APPLE AND WITH_METAL)
+    target_link_libraries(colmap-neural PRIVATE ${METAL_LIBRARIES})
+    target_compile_definitions(colmap-neural PRIVATE WITH_METAL)
 endif()
 
-# Add subdirectories
-add_subdirectory(colmap-neural-app)
+# Copy config files to build directory
+configure_file(
+    ${CMAKE_SOURCE_DIR}/config/config.ini 
+    ${CMAKE_BINARY_DIR}/config/config.ini 
+    COPYONLY
+)
 
-# Install targets
-install(TARGETS colmap-neural
-        RUNTIME DESTINATION bin)
+# Installation
+install(TARGETS colmap-neural DESTINATION bin)
+install(FILES ${CMAKE_SOURCE_DIR}/config/config.ini DESTINATION etc/colmap-neural)
+
+# Print ONNX Runtime configuration
+message(STATUS "ONNX Runtime configuration:")
+message(STATUS "  Version: ${ONNXRUNTIME_VERSION}")
+message(STATUS "  Include Dirs: ${ONNXRuntime_INCLUDE_DIRS}")
+message(STATUS "  Libraries: ${ONNXRuntime_LIBRARIES}")
 
 # Print configuration summary
 message(STATUS "Configuration Summary:")
