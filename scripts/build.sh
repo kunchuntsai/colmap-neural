@@ -1,26 +1,31 @@
 #!/bin/bash
+# scripts/build.sh
+
 set -e
 
-# Parse command line arguments
-CMAKE_OPTIONS=""
+# Get the project root directory
+if [ -z "$COLMAP_NEURAL_ROOT" ]; then
+    SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+    COLMAP_NEURAL_ROOT="$(dirname "$SCRIPT_DIR")"
+fi
+
+# Parse arguments
 BUILD_TYPE="Release"
-CLEAN_BUILD=false
-NUM_JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+BUILD_DIR="$COLMAP_NEURAL_ROOT/build"
+WITH_CUDA="OFF"
+WITH_METAL="OFF"
+WITH_DOCKER="OFF"
 
-print_usage() {
-    echo "Usage: $0 [options]"
-    echo "Options:"
-    echo "  --debug              Build in Debug mode"
-    echo "  --release            Build in Release mode (default)"
-    echo "  --clean              Clean build directory before building"
-    echo "  --jobs=<num>         Number of parallel jobs (default: $NUM_JOBS)"
-    echo "  --with-cuda          Enable CUDA support"
-    echo "  --with-metal         Enable Metal support (macOS only)"
-    echo "  --build-colmap       Build COLMAP from source (default)"
-    echo "  --use-system-colmap  Use system-installed COLMAP"
-    echo "  --help               Show this help message"
-}
+# Detect platform
+if [[ "$(uname)" == "Darwin" ]]; then
+    WITH_METAL="ON"
+    echo "🍎 Detected macOS platform, enabling Metal"
+else
+    WITH_CUDA="ON"
+    echo "🐧 Detected non-macOS platform, enabling CUDA"
+fi
 
+# Parse command line arguments
 for arg in "$@"; do
     case $arg in
         --debug)
@@ -31,64 +36,72 @@ for arg in "$@"; do
             BUILD_TYPE="Release"
             shift
             ;;
+        --cuda)
+            WITH_CUDA="ON"
+            shift
+            ;;
+        --no-cuda)
+            WITH_CUDA="OFF"
+            shift
+            ;;
+        --metal)
+            WITH_METAL="ON"
+            shift
+            ;;
+        --no-metal)
+            WITH_METAL="OFF"
+            shift
+            ;;
+        --docker)
+            WITH_DOCKER="ON"
+            shift
+            ;;
         --clean)
-            CLEAN_BUILD=true
-            shift
-            ;;
-        --jobs=*)
-            NUM_JOBS="${arg#*=}"
-            shift
-            ;;
-        --with-cuda)
-            CMAKE_OPTIONS="$CMAKE_OPTIONS -DCOLMAP_NEURAL_CUDA_ENABLE=ON"
-            shift
-            ;;
-        --with-metal)
-            CMAKE_OPTIONS="$CMAKE_OPTIONS -DCOLMAP_NEURAL_METAL_ENABLE=ON"
-            shift
-            ;;
-        --build-colmap)
-            CMAKE_OPTIONS="$CMAKE_OPTIONS -DCOLMAP_NEURAL_BUILD_COLMAP=ON"
-            shift
-            ;;
-        --use-system-colmap)
-            CMAKE_OPTIONS="$CMAKE_OPTIONS -DCOLMAP_NEURAL_BUILD_COLMAP=OFF"
+            echo "🧹 Cleaning build directory..."
+            rm -rf "$BUILD_DIR"
             shift
             ;;
         --help)
-            print_usage
+            echo "Usage: $0 [options]"
+            echo "Options:"
+            echo "  --debug          Build in debug mode"
+            echo "  --release        Build in release mode (default)"
+            echo "  --cuda           Enable CUDA support"
+            echo "  --no-cuda        Disable CUDA support"
+            echo "  --metal          Enable Metal support"
+            echo "  --no-metal       Disable Metal support"
+            echo "  --docker         Building in Docker environment"
+            echo "  --clean          Clean build directory before build"
             exit 0
-            ;;
-        *)
-            # Unknown option
-            echo "Unknown option: $arg"
-            print_usage
-            exit 1
             ;;
     esac
 done
 
-# Set build directory
-BUILD_DIR="build"
-
-# Clean build directory if requested
-if [ "$CLEAN_BUILD" = true ]; then
-    echo "Cleaning build directory..."
-    rm -rf "$BUILD_DIR"
-fi
-
 # Create build directory if it doesn't exist
 mkdir -p "$BUILD_DIR"
+
+echo "🏗️  Building COLMAP Neural with configuration:"
+echo "  📁 Build directory: $BUILD_DIR"
+echo "  🛠️  Build type: $BUILD_TYPE"
+echo "  🖥️  CUDA support: $WITH_CUDA"
+echo "  🍎 Metal support: $WITH_METAL"
+echo "  🐳 Docker environment: $WITH_DOCKER"
+
+# Change to build directory
 cd "$BUILD_DIR"
 
 # Configure with CMake
-echo "Configuring with CMake (Build type: $BUILD_TYPE)..."
-cmake .. \
+echo "⚙️  Configuring with CMake..."
+cmake "$COLMAP_NEURAL_ROOT" \
     -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-    $CMAKE_OPTIONS
+    -DWITH_CUDA="$WITH_CUDA" \
+    -DWITH_METAL="$WITH_METAL" \
+    -DWITH_DOCKER="$WITH_DOCKER"
 
 # Build
-echo "Building with $NUM_JOBS parallel jobs..."
-cmake --build . --parallel "$NUM_JOBS"
+echo "🔨 Building..."
+cmake --build . -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
 
-echo "Build complete! Binaries are located in $BUILD_DIR/colmap-neural-app/"
+# Success message
+echo "✅ Build completed successfully!"
+echo "🚀 You can run the application with ./colmap-neural-app/colmap-neural"

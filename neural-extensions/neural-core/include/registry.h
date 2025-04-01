@@ -1,80 +1,37 @@
+// neural-extensions/neural-core/include/registry.h
 #pragma once
 
-#include <functional>
-#include <memory>
 #include <string>
+#include <memory>
 #include <unordered_map>
 
-// Forward declarations for COLMAP classes
-namespace colmap {
-class FeatureExtractor;
-class FeatureMatcher;
-class MVSModel;
-}
+namespace neural {
 
-namespace colmap_neural {
-
-// Registry template for different types of extensions
-template <typename T>
-class Registry {
+// Base class for all neural models
+class NeuralModel {
 public:
-    using FactoryFunc = std::function<std::unique_ptr<T>()>;
-    
-    static Registry<T>& GetInstance() {
-        static Registry<T> instance;
-        return instance;
-    }
-    
-    void Register(const std::string& name, FactoryFunc factory) {
-        factories_[name] = std::move(factory);
-    }
-    
-    std::unique_ptr<T> Create(const std::string& name) {
-        auto it = factories_.find(name);
-        if (it != factories_.end()) {
-            return it->second();
-        }
-        return nullptr;
-    }
-    
-    std::vector<std::string> GetRegisteredNames() const {
-        std::vector<std::string> names;
-        for (const auto& pair : factories_) {
-            names.push_back(pair.first);
-        }
-        return names;
-    }
-    
-private:
-    Registry() = default;
-    std::unordered_map<std::string, FactoryFunc> factories_;
+    virtual ~NeuralModel() = default;
+    virtual bool Initialize(const std::string& model_path) = 0;
 };
 
-// Specific registries
-using FeatureExtractorRegistry = Registry<colmap::FeatureExtractor>;
-using FeatureMatcherRegistry = Registry<colmap::FeatureMatcher>;
-using MVSModelRegistry = Registry<colmap::MVSModel>;
+// Registry to manage neural models
+class ModelRegistry {
+public:
+    static ModelRegistry& GetInstance();
+    
+    template <typename T>
+    bool RegisterModel(const std::string& name);
+    
+    std::shared_ptr<NeuralModel> GetModel(const std::string& name);
+    
+private:
+    ModelRegistry() = default;
+    std::unordered_map<std::string, std::shared_ptr<NeuralModel>> models_;
+};
 
-// Helper macros for registration
-#define REGISTER_FEATURE_EXTRACTOR(name, class_name) \
-    static bool name##_registered = []() { \
-        colmap_neural::FeatureExtractorRegistry::GetInstance().Register( \
-            #name, []() { return std::make_unique<class_name>(); }); \
-        return true; \
-    }()
+// Interface initialization functions (to be implemented in Phase 2)
+bool InitializeFeatureExtractors();
+bool InitializeFeatureMatchers();  
+bool InitializeDenseReconstruction();
 
-#define REGISTER_FEATURE_MATCHER(name, class_name) \
-    static bool name##_registered = []() { \
-        colmap_neural::FeatureMatcherRegistry::GetInstance().Register( \
-            #name, []() { return std::make_unique<class_name>(); }); \
-        return true; \
-    }()
-
-#define REGISTER_MVS_MODEL(name, class_name) \
-    static bool name##_registered = []() { \
-        colmap_neural::MVSModelRegistry::GetInstance().Register( \
-            #name, []() { return std::make_unique<class_name>(); }); \
-        return true; \
-    }()
-
-} // namespace colmap_neural
+} // namespace neural
