@@ -1,62 +1,57 @@
-# COLMAP Neural App CMakeLists.txt
+cmake_minimum_required(VERSION 3.10)
+project(colmap-neural-app VERSION 0.1.0)
 
-cmake_minimum_required(VERSION 3.20)
+# Include the generated ConfigureCOLMAP.cmake file
+include(${CMAKE_BINARY_DIR}/cmake/ConfigureCOLMAP.cmake)
+
+# Find dependencies
+find_package(gflags REQUIRED)
+find_package(Eigen3 REQUIRED)
+find_package(Boost REQUIRED COMPONENTS filesystem system program_options)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Define sources for the main application
+# Include directories
+include_directories(
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${COLMAP_INCLUDE_DIRS}
+    ${EIGEN3_INCLUDE_DIRS}
+    ${Boost_INCLUDE_DIRS}
+)
+
+# Add source files
 set(SOURCES
     src/main.cc
+    # Add other source files as they're created
 )
 
-# Create executable
+# Add executable
 add_executable(colmap-neural ${SOURCES})
-
-# Include directories
-target_include_directories(colmap-neural PUBLIC
-    ${CMAKE_SOURCE_DIR}
-    ${COLMAP_INCLUDE_DIRS}
-    ${Boost_INCLUDE_DIRS}
-    ${EIGEN3_INCLUDE_DIR}
-)
 
 # Link libraries
 target_link_libraries(colmap-neural
-    COLMAP::COLMAP
-    neural-extensions
-    ${Boost_LIBRARIES}
+    ${COLMAP_LIBRARIES}
+    gflags
     Eigen3::Eigen
-    glog::glog
-    gflags::gflags
+    ${Boost_LIBRARIES}
 )
 
-# Add Metal support if available
-if(APPLE AND WITH_METAL AND Metal_FOUND)
-    target_compile_definitions(colmap-neural PRIVATE WITH_METAL)
-    target_link_libraries(colmap-neural ${Metal_LIBRARY})
-    
-    if(DEFINED METAL_PERFORMANCE_SHADERS)
-        target_compile_definitions(colmap-neural PRIVATE WITH_MPS)
-        target_link_libraries(colmap-neural ${METAL_PERFORMANCE_SHADERS})
-    endif()
-    
-    if(DEFINED ACCELERATE_FRAMEWORK)
-        target_link_libraries(colmap-neural ${ACCELERATE_FRAMEWORK})
-    endif()
-    
-    if(DEFINED CORE_ML)
-        target_link_libraries(colmap-neural ${CORE_ML})
-    endif()
-endif()
-
-# Define compile options optimized for Apple M4 Pro
+# For Apple M4, add Metal support
 if(APPLE AND WITH_METAL)
-    target_compile_options(colmap-neural PRIVATE -O3 -mcpu=apple-m4)
+    # Use the FindMetal package we created
+    find_package(Metal REQUIRED)
+    if(METAL_FOUND)
+        target_link_libraries(colmap-neural ${METAL_LIBRARIES})
+        target_compile_definitions(colmap-neural PRIVATE WITH_METAL)
+    endif()
 endif()
 
-# Install rules
-install(TARGETS colmap-neural
-    RUNTIME DESTINATION bin
-)
+# If neural extensions are available, link against them
+if(TARGET neural_extensions)
+    target_link_libraries(colmap-neural neural_extensions)
+endif()
+
+# Installation
+install(TARGETS colmap-neural DESTINATION bin)

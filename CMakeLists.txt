@@ -38,29 +38,35 @@ if(APPLE)
         message(STATUS "Detected Apple Silicon: ${CPU_BRAND}")
         add_definitions(-DAPPLE_SILICON)
         
-        # Enable Apple M4-specific optimizations
-        add_compile_options(-mcpu=apple-m4)
+        # Enable Apple-specific optimizations
+        add_compile_options(-O3)
         
-        # Add Metal Performance Shaders support
-        find_library(METAL_PERFORMANCE_SHADERS MetalPerformanceShaders)
-        if(METAL_PERFORMANCE_SHADERS)
-            message(STATUS "Found Metal Performance Shaders")
-            add_definitions(-DWITH_MPS)
+        # Find Metal and related frameworks
+        find_package(Metal REQUIRED)
+        if(METAL_FOUND)
+            message(STATUS "Found Metal frameworks")
+            add_definitions(-DWITH_METAL)
         endif()
     endif()
 endif()
 
 # COLMAP dependency - either find installed or build from source
 if(BUILD_COLMAP)
-    # Build COLMAP from source
-    include(ExternalProject)
+    # First include our COLMAP patching script and define COLMAP paths
+    include(${CMAKE_SOURCE_DIR}/cmake/PatchCOLMAP.cmake)
     set(COLMAP_INSTALL_DIR ${CMAKE_BINARY_DIR}/colmap-install)
     set(COLMAP_SOURCE_DIR ${CMAKE_SOURCE_DIR}/external/colmap)
     
     # Create external directory if it doesn't exist
-    if(NOT EXISTS ${COLMAP_SOURCE_DIR})
+    if(NOT EXISTS ${COLMAP_SOURCE_DIR} AND EXISTS ${CMAKE_SOURCE_DIR}/external)
         file(MAKE_DIRECTORY ${CMAKE_SOURCE_DIR}/external)
     endif()
+    
+    # Apply patches to COLMAP source code if needed
+    patch_colmap_files(${COLMAP_SOURCE_DIR})
+    
+    # Build COLMAP from source
+    include(ExternalProject)
     
     # Configure COLMAP build options
     set(COLMAP_CMAKE_ARGS
@@ -70,11 +76,23 @@ if(BUILD_COLMAP)
         -DGUI_ENABLED=ON
         -DCUDA_ENABLED=OFF
         -DOPENMP_ENABLED=ON
+        -DCMAKE_POLICY_DEFAULT_CMP0075=NEW
+        -DCMAKE_POLICY_DEFAULT_CMP0074=NEW
+        -DCMAKE_MACOSX_RPATH=ON
     )
     
     # Add Apple M4 Pro specific optimizations
     if(APPLE AND WITH_METAL)
-        list(APPEND COLMAP_CMAKE_ARGS -DCMAKE_CXX_FLAGS="-O3 -mcpu=apple-m4")
+        # Add optimization flags separately to avoid parsing issues
+        list(APPEND COLMAP_CMAKE_ARGS -DCMAKE_CXX_FLAGS="-O3")
+        list(APPEND COLMAP_CMAKE_ARGS -DCMAKE_CXX_FLAGS_RELEASE="-O3")
+        
+        # Check if we can detect Apple Silicon before adding M4-specific flags
+        if(CPU_BRAND MATCHES "Apple")
+            # Add Apple-specific flags as separate options
+            list(APPEND COLMAP_CMAKE_ARGS -DAPPLE_SILICON=ON)
+        endif()
+        
         list(APPEND COLMAP_CMAKE_ARGS -DSIMD_ENABLED=ON)
         
         # Pass Metal flags to COLMAP if it supports them
@@ -89,28 +107,27 @@ if(BUILD_COLMAP)
         PREFIX ${CMAKE_BINARY_DIR}/colmap_ext-prefix
     )
     
-    # Set COLMAP include and library paths
-    set(COLMAP_INCLUDE_DIRS
-        ${COLMAP_INSTALL_DIR}/include
+    # Configure interface library for COLMAP after build
+    # Generate the ConfigureCOLMAP.cmake file from the template
+    configure_file(
+        ${CMAKE_SOURCE_DIR}/cmake/ConfigureCOLMAP.cmake.in
+        ${CMAKE_BINARY_DIR}/cmake/ConfigureCOLMAP.cmake
+        @ONLY
+    )
+    
+    # Create an interface target for COLMAP that can be used by our app
+    add_library(colmap_interface INTERFACE)
+    add_dependencies(colmap_interface colmap_ext)
+    
+    # The actual library paths will be configured in the script
+    # but we'll set include directories here for convenience
+    target_include_directories(colmap_interface INTERFACE 
         ${COLMAP_SOURCE_DIR}/src
+        ${COLMAP_INSTALL_DIR}/include
     )
     
-    # Set library paths based on platform
-    if(WIN32)
-        set(COLMAP_LIBRARIES ${COLMAP_INSTALL_DIR}/lib/colmap.lib)
-    elseif(APPLE)
-        set(COLMAP_LIBRARIES ${COLMAP_INSTALL_DIR}/lib/libcolmap.dylib)
-    else()
-        set(COLMAP_LIBRARIES ${COLMAP_INSTALL_DIR}/lib/libcolmap.so)
-    endif()
-    
-    # Create imported target
-    add_library(COLMAP::COLMAP UNKNOWN IMPORTED)
-    set_target_properties(COLMAP::COLMAP PROPERTIES
-        IMPORTED_LOCATION ${COLMAP_LIBRARIES}
-        INTERFACE_INCLUDE_DIRECTORIES "${COLMAP_INCLUDE_DIRS}"
-    )
-    add_dependencies(COLMAP::COLMAP colmap_ext)
+    # Add an alias so we can use the same target name as when finding installed COLMAP
+    add_library(COLMAP::COLMAP ALIAS colmap_interface)
     
 else()
     # Find pre-installed COLMAP
@@ -121,44 +138,16 @@ endif()
 find_package(Boost REQUIRED COMPONENTS program_options filesystem system)
 find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
-find_package(Torch REQUIRED)
 find_package(glog REQUIRED)
 find_package(gflags REQUIRED)
 
-# Metal support for Apple platforms (particularly M4 Pro)
-if(APPLE AND WITH_METAL)
-    find_package(Metal)
-    if(Metal_FOUND)
-        add_definitions(-DWITH_METAL)
-        message(STATUS "Building with Metal support")
-        
-        # Find additional Apple frameworks for ML acceleration
-        find_library(ACCELERATE_FRAMEWORK Accelerate)
-        find_library(CORE_ML CoreML)
-        
-        if(ACCELERATE_FRAMEWORK)
-            message(STATUS "Found Accelerate Framework")
-            add_definitions(-DWITH_ACCELERATE)
-        endif()
-        
-        if(CORE_ML)
-            message(STATUS "Found CoreML Framework")
-            add_definitions(-DWITH_CORE_ML)
-        endif()
-    else()
-        message(WARNING "Metal requested but not found")
-    endif()
-endif()
-
-# CUDA is explicitly disabled for Apple M4 Pro
-# CUDA section kept for reference but will not be used
-if(WITH_CUDA)
-    message(STATUS "CUDA support is disabled for Apple M4 Pro builds")
-    set(WITH_CUDA OFF)
+# Add the neural-extensions if they exist
+if(EXISTS ${CMAKE_SOURCE_DIR}/neural-extensions)
+    message(STATUS "Adding neural-extensions directory")
+    add_subdirectory(neural-extensions)
 endif()
 
 # Add subdirectories
-add_subdirectory(neural-extensions)
 add_subdirectory(colmap-neural-app)
 
 # Install targets

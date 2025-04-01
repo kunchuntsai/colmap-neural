@@ -12,7 +12,6 @@ fi
 # Parse arguments
 BUILD_TYPE="Release"
 BUILD_DIR="$COLMAP_NEURAL_ROOT/build"
-WITH_CUDA="OFF"
 WITH_METAL="OFF"
 WITH_DOCKER="OFF"
 
@@ -20,9 +19,6 @@ WITH_DOCKER="OFF"
 if [[ "$(uname)" == "Darwin" ]]; then
     WITH_METAL="ON"
     echo "🍎 Detected macOS platform, enabling Metal"
-else
-    WITH_CUDA="ON"
-    echo "🐧 Detected non-macOS platform, enabling CUDA"
 fi
 
 # Parse command line arguments
@@ -34,14 +30,6 @@ for arg in "$@"; do
             ;;
         --release)
             BUILD_TYPE="Release"
-            shift
-            ;;
-        --cuda)
-            WITH_CUDA="ON"
-            shift
-            ;;
-        --no-cuda)
-            WITH_CUDA="OFF"
             shift
             ;;
         --metal)
@@ -66,8 +54,6 @@ for arg in "$@"; do
             echo "Options:"
             echo "  --debug          Build in debug mode"
             echo "  --release        Build in release mode (default)"
-            echo "  --cuda           Enable CUDA support"
-            echo "  --no-cuda        Disable CUDA support"
             echo "  --metal          Enable Metal support"
             echo "  --no-metal       Disable Metal support"
             echo "  --docker         Building in Docker environment"
@@ -80,28 +66,71 @@ done
 # Create build directory if it doesn't exist
 mkdir -p "$BUILD_DIR"
 
-echo "🏗️  Building COLMAP Neural with configuration:"
+echo "🏗️  Building COLMAP Neural Phase 1 with configuration:"
 echo "  📁 Build directory: $BUILD_DIR"
 echo "  🛠️  Build type: $BUILD_TYPE"
-echo "  🖥️  CUDA support: $WITH_CUDA"
 echo "  🍎 Metal support: $WITH_METAL"
 echo "  🐳 Docker environment: $WITH_DOCKER"
 
 # Change to build directory
 cd "$BUILD_DIR"
 
+# Check if COLMAP source code is available
+COLMAP_SOURCE_DIR="$COLMAP_NEURAL_ROOT/external/colmap"
+if [ ! -d "$COLMAP_SOURCE_DIR" ]; then
+    echo "⚠️  COLMAP source code not found at $COLMAP_SOURCE_DIR"
+    
+    # Create directory if it doesn't exist
+    mkdir -p "$COLMAP_NEURAL_ROOT/external"
+    
+    echo "🔍 Cloning COLMAP repository..."
+    git clone https://github.com/colmap/colmap.git "$COLMAP_SOURCE_DIR"
+    
+    if [ $? -ne 0 ]; then
+        echo "❌ Failed to clone COLMAP repository"
+        exit 1
+    fi
+    
+    # Switch to a stable version tag
+    cd "$COLMAP_SOURCE_DIR"
+    git checkout 3.8
+    cd "$BUILD_DIR"
+    
+    echo "✅ COLMAP repository cloned successfully"
+else
+    echo "✅ Using existing COLMAP source code at $COLMAP_SOURCE_DIR"
+fi
+
 # Configure with CMake
 echo "⚙️  Configuring with CMake..."
 cmake "$COLMAP_NEURAL_ROOT" \
     -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-    -DWITH_CUDA="$WITH_CUDA" \
     -DWITH_METAL="$WITH_METAL" \
-    -DWITH_DOCKER="$WITH_DOCKER"
+    -DWITH_DOCKER="$WITH_DOCKER" \
+    -DBUILD_COLMAP=ON
 
-# Build
-echo "🔨 Building..."
-cmake --build . -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
+# Build COLMAP first
+echo "🔨 Building COLMAP (Step 1/2)..."
+cmake --build . --target colmap_ext -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
+
+if [ $? -ne 0 ]; then
+    echo "❌ Failed to build COLMAP"
+    exit 1
+fi
+
+echo "✅ COLMAP built successfully"
+
+# Now build the app
+echo "🔨 Building colmap-neural-app (Step 2/2)..."
+cmake --build . --target colmap-neural -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
+
+if [ $? -ne 0 ]; then
+    echo "❌ Failed to build colmap-neural-app"
+    exit 1
+fi
+
+echo "✅ colmap-neural-app built successfully"
 
 # Success message
 echo "✅ Build completed successfully!"
-echo "🚀 You can run the application with ./colmap-neural-app/colmap-neural"
+echo "🚀 You can run the application with ./bin/colmap-neural"

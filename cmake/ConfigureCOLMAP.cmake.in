@@ -1,0 +1,51 @@
+# This script configures the COLMAP library paths after the build
+
+message(STATUS "Configuring COLMAP library paths...")
+
+# Set COLMAP include directories
+set(COLMAP_INCLUDE_DIRS "@COLMAP_INSTALL_DIR@/include")
+
+# Get the platform-specific library path
+if(WIN32)
+    set(COLMAP_LIBRARY "@COLMAP_INSTALL_DIR@/lib/colmap.lib")
+elseif(APPLE)
+    set(COLMAP_LIBRARY "@COLMAP_INSTALL_DIR@/lib/libcolmap.dylib")
+else()
+    set(COLMAP_LIBRARY "@COLMAP_INSTALL_DIR@/lib/libcolmap.so")
+endif()
+
+# Check if the library exists
+if(NOT EXISTS "${COLMAP_LIBRARY}")
+    message(WARNING "COLMAP library not found at ${COLMAP_LIBRARY}")
+    message(STATUS "This is expected during the first configuration. The library will be created during the build.")
+else()
+    message(STATUS "Found COLMAP library: ${COLMAP_LIBRARY}")
+endif()
+
+# Check if include directory exists
+if(NOT EXISTS "@COLMAP_INSTALL_DIR@/include")
+    message(WARNING "COLMAP include directory not found at @COLMAP_INSTALL_DIR@/include")
+    message(STATUS "This is expected during the first configuration. The include directory will be created during the build.")
+else()
+    message(STATUS "Found COLMAP include directory: @COLMAP_INSTALL_DIR@/include")
+endif()
+
+# Set COLMAP_LIBRARIES variable for linking
+set(COLMAP_LIBRARIES ${COLMAP_LIBRARY})
+
+# Add additional libraries that COLMAP may depend on
+find_package(Eigen3 REQUIRED)
+find_package(Boost REQUIRED COMPONENTS filesystem program_options system)
+find_package(Ceres REQUIRED)
+find_package(gflags REQUIRED)
+find_package(glog REQUIRED)
+
+if(WIN32)
+    # Add Windows-specific dependencies if needed
+elseif(APPLE)
+    # Add MacOS-specific dependencies if needed
+    find_package(OpenGL REQUIRED)
+    list(APPEND COLMAP_LIBRARIES ${OpenGL_LIBRARIES})
+else()
+    # Add Linux-specific dependencies if needed
+endif()
